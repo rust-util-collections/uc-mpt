@@ -1,8 +1,6 @@
-use crate::errors::MemDBError;
-use parking_lot::RwLock;
-use std::collections::HashMap;
+pub use memory_db::MemoryDB;
+
 use std::error::Error;
-use std::sync::Arc;
 
 /// "DB" defines the "trait" of trie and database interaction.
 /// You should first write the data to the cache and write the data
@@ -60,55 +58,62 @@ pub trait DB: Send + Sync {
     fn is_empty(&self) -> Result<bool, Self::Error>;
 }
 
-#[derive(Default, Debug)]
-pub struct MemoryDB {
-    storage: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>>,
-}
+mod memory_db {
+    use crate::{errors::MemDBError, DB};
+    use parking_lot::RwLock;
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
-impl MemoryDB {
-    pub fn new() -> Self {
-        MemoryDB {
-            storage: Arc::new(RwLock::new(HashMap::new())),
-        }
+    #[derive(Default, Debug)]
+    pub struct MemoryDB {
+        storage: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>>,
     }
-}
 
-impl DB for MemoryDB {
-    type Error = MemDBError;
-
-    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        if let Some(value) = self.storage.read().get(key) {
-            Ok(Some(value.clone()))
-        } else {
-            Ok(None)
+    impl MemoryDB {
+        pub fn new() -> Self {
+            MemoryDB {
+                storage: Arc::new(RwLock::new(HashMap::new())),
+            }
         }
     }
 
-    fn insert(&self, key: &[u8], value: &[u8]) -> Result<(), Self::Error> {
-        self.storage.write().insert(key.to_vec(), value.to_vec());
-        Ok(())
-    }
+    impl DB for MemoryDB {
+        type Error = MemDBError;
 
-    fn contains(&self, key: &[u8]) -> Result<bool, Self::Error> {
-        Ok(self.storage.read().contains_key(key))
-    }
+        fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
+            if let Some(value) = self.storage.read().get(key) {
+                Ok(Some(value.clone()))
+            } else {
+                Ok(None)
+            }
+        }
 
-    fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
-        self.storage.write().remove(key);
-        Ok(())
-    }
+        fn insert(&self, key: &[u8], value: &[u8]) -> Result<(), Self::Error> {
+            self.storage.write().insert(key.to_vec(), value.to_vec());
+            Ok(())
+        }
 
-    fn flush(&self) -> Result<(), Self::Error> {
-        Ok(())
-    }
+        fn contains(&self, key: &[u8]) -> Result<bool, Self::Error> {
+            Ok(self.storage.read().contains_key(key))
+        }
 
-    #[cfg(test)]
-    fn len(&self) -> Result<usize, Self::Error> {
-        Ok(self.storage.try_read().unwrap().len())
-    }
-    #[cfg(test)]
-    fn is_empty(&self) -> Result<bool, Self::Error> {
-        Ok(self.storage.try_read().unwrap().is_empty())
+        fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
+            self.storage.write().remove(key);
+            Ok(())
+        }
+
+        fn flush(&self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        #[cfg(test)]
+        fn len(&self) -> Result<usize, Self::Error> {
+            Ok(self.storage.try_read().unwrap().len())
+        }
+        #[cfg(test)]
+        fn is_empty(&self) -> Result<bool, Self::Error> {
+            Ok(self.storage.try_read().unwrap().is_empty())
+        }
     }
 }
 

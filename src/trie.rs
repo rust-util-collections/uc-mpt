@@ -131,7 +131,8 @@ where
 
                             Node::Extension(ref ext) => {
                                 let cur_len = self.nibble.len();
-                                self.nibble.truncate(cur_len - ext.borrow().prefix.len());
+                                self.nibble
+                                    .truncate(cur_len - ext.borrow().prefix.len());
                             }
 
                             Node::Branch(_) => {
@@ -149,7 +150,10 @@ where
 
                     (TraceStatus::Doing, Node::Leaf(ref leaf)) => {
                         self.nibble.extend(&leaf.borrow().key);
-                        return Some((self.nibble.encode_raw().0, leaf.borrow().value.clone()));
+                        return Some((
+                            self.nibble.encode_raw().0,
+                            leaf.borrow().value.clone(),
+                        ));
                     }
 
                     (TraceStatus::Doing, Node::Branch(ref branch)) => {
@@ -162,7 +166,9 @@ where
                     }
 
                     (TraceStatus::Doing, Node::Hash(ref hash_node)) => {
-                        if let Ok(n) = self.trie.recover_from_db(&hash_node.borrow().hash.clone()) {
+                        if let Ok(n) =
+                            self.trie.recover_from_db(&hash_node.borrow().hash.clone())
+                        {
                             self.nodes.pop();
                             self.nodes.push(n.into());
                         } else {
@@ -358,13 +364,14 @@ where
     ) -> TrieResult<Option<Vec<u8>>> {
         let memdb = Arc::new(MemoryDB::new());
         for node_encoded in proof.iter() {
-            let hash = digest(&node_encoded);
+            let hash = digest(node_encoded);
 
             if root_hash.eq(&hash) || node_encoded.len() >= DIGEST_LEN {
                 memdb.insert(&hash, node_encoded).unwrap();
             }
         }
-        let trie = PatriciaTrie::from(memdb, root_hash).or(Err(TrieError::InvalidProof))?;
+        let trie =
+            PatriciaTrie::from(memdb, root_hash).or(Err(TrieError::InvalidProof))?;
         trie.get(key).or(Err(TrieError::InvalidProof))
     }
 }
@@ -392,7 +399,10 @@ where
                     Ok(borrow_branch.value.clone())
                 } else {
                     let index = partial.at(0);
-                    self.get_at(borrow_branch.children[index].clone(), &partial.offset(1))
+                    self.get_at(
+                        borrow_branch.children[index].clone(),
+                        &partial.offset(1),
+                    )
                 }
             }
             Node::Extension(extension) => {
@@ -491,12 +501,14 @@ where
                 }
 
                 if match_index == prefix.len() {
-                    let new_node = self.insert_at(sub_node, partial.offset(match_index), value)?;
+                    let new_node =
+                        self.insert_at(sub_node, partial.offset(match_index), value)?;
                     return Ok(Node::from_extension(prefix.clone(), new_node));
                 }
 
                 let new_ext = Node::from_extension(prefix.offset(match_index), sub_node);
-                let new_node = self.insert_at(new_ext, partial.offset(match_index), value)?;
+                let new_node =
+                    self.insert_at(new_ext, partial.offset(match_index), value)?;
                 borrow_ext.prefix = prefix.slice(0, match_index);
                 borrow_ext.node = new_node;
                 Ok(Node::Extension(ext.clone()))
@@ -549,8 +561,10 @@ where
                 let match_len = partial.common_prefix(prefix);
 
                 if match_len == prefix.len() {
-                    let (new_n, deleted) =
-                        self.delete_at(borrow_ext.node.clone(), &partial.offset(match_len))?;
+                    let (new_n, deleted) = self.delete_at(
+                        borrow_ext.node.clone(),
+                        &partial.offset(match_len),
+                    )?;
 
                     if deleted {
                         borrow_ext.node = new_n;
@@ -600,8 +614,10 @@ where
                     let used_index = used_indexs[0];
                     let n = borrow_branch.children[used_index].clone();
 
-                    let new_node =
-                        Node::from_extension(Nibbles::from_hex(vec![used_index as u8]), n);
+                    let new_node = Node::from_extension(
+                        Nibbles::from_hex(vec![used_index as u8]),
+                        n,
+                    );
                     self.degenerate(new_node)
                 } else {
                     Ok(Node::Branch(branch.clone()))
@@ -616,7 +632,10 @@ where
                         let borrow_sub_ext = sub_ext.borrow();
 
                         let new_prefix = prefix.join(&borrow_sub_ext.prefix);
-                        let new_n = Node::from_extension(new_prefix, borrow_sub_ext.node.clone());
+                        let new_n = Node::from_extension(
+                            new_prefix,
+                            borrow_sub_ext.node.clone(),
+                        );
                         self.degenerate(new_n)
                     }
                     Node::Leaf(leaf) => {
@@ -632,7 +651,8 @@ where
 
                         let new_node = self.recover_from_db(&hash)?;
 
-                        let n = Node::from_extension(borrow_ext.prefix.clone(), new_node);
+                        let n =
+                            Node::from_extension(borrow_ext.prefix.clone(), new_node);
                         self.degenerate(n)
                     }
                     _ => Ok(Node::Extension(ext.clone())),
@@ -929,7 +949,8 @@ mod tests {
         let mut trie = PatriciaTrie::new(memdb);
 
         for _ in 0..1000 {
-            let rand_str: String = thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+            let rand_str: String =
+                thread_rng().sample_iter(&Alphanumeric).take(30).collect();
             let val = rand_str.as_bytes();
             trie.insert(val.to_vec(), val.to_vec()).unwrap();
 
@@ -962,7 +983,8 @@ mod tests {
         let mut trie = PatriciaTrie::new(memdb);
 
         for _ in 0..1000 {
-            let rand_str: String = thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+            let rand_str: String =
+                thread_rng().sample_iter(&Alphanumeric).take(30).collect();
             let val = rand_str.as_bytes();
             trie.insert(val.to_vec(), val.to_vec()).unwrap();
 

@@ -26,7 +26,8 @@ fn digest(data: &[u8]) -> [u8; DIGEST_LEN] {
 
 mod verify {
     use crate::{
-        digest, trie::TrieResult, MemoryDB, PatriciaTrie, Trie, TrieError, DB, DIGEST_LEN,
+        digest, trie::TrieResult, MemoryDB, PatriciaTrie, Trie, TrieError, DB,
+        DIGEST_LEN,
     };
     use std::sync::Arc;
 
