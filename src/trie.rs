@@ -56,7 +56,6 @@ where
     root_hash: Vec<u8>,
 
     db: Arc<D>,
-    backup_db: Option<Arc<D>>,
 
     cache: RefCell<HashMap<Vec<u8>, Vec<u8>>>,
     passing_keys: RefCell<HashSet<Vec<u8>>>,
@@ -212,6 +211,7 @@ where
             nodes,
         }
     }
+
     pub fn new(db: Arc<D>) -> Self {
         Self {
             root: Node::Empty,
@@ -222,7 +222,6 @@ where
             gen_keys: RefCell::new(HashSet::new()),
 
             db,
-            backup_db: None,
         }
     }
 
@@ -238,7 +237,6 @@ where
                     gen_keys: RefCell::new(HashSet::new()),
 
                     db,
-                    backup_db: None,
                 };
 
                 trie.root = trie.decode_node(&data)?;
@@ -246,54 +244,6 @@ where
             }
             None => Err(TrieError::InvalidStateRoot),
         }
-    }
-
-    // extract specified height statedb in full node mode
-    pub fn extract_backup(
-        db: Arc<D>,
-        backup_db: Option<Arc<D>>,
-        root_hash: &[u8],
-    ) -> TrieResult<(Self, Vec<Vec<u8>>)> {
-        let mut pt = Self {
-            root: Node::Empty,
-            root_hash: digest(rlp::NULL_RLP.as_ref()).to_vec(),
-
-            cache: RefCell::new(HashMap::new()),
-            passing_keys: RefCell::new(HashSet::new()),
-            gen_keys: RefCell::new(HashSet::new()),
-
-            db,
-            backup_db,
-        };
-
-        let root = pt.recover_from_db(root_hash)?;
-        pt.root = root.clone();
-        pt.root_hash = root_hash.to_vec();
-
-        let mut addr_list = vec![];
-        pt.iter().for_each(|(k, _v)| addr_list.push(k));
-        let encoded = pt.cache_node(root)?;
-        pt.cache
-            .borrow_mut()
-            .insert(digest(&encoded).to_vec(), encoded);
-
-        let mut kvs = Vec::with_capacity(pt.cache.borrow().len());
-        for (k, v) in pt.cache.borrow_mut().drain() {
-            kvs.push((k, v));
-        }
-
-        // store data in backup db
-        pt.backup_db
-            .clone()
-            .unwrap()
-            .insert_batch(&kvs)
-            .map_err(|e| TrieError::DB(e.to_string()))?;
-        pt.backup_db
-            .clone()
-            .unwrap()
-            .flush()
-            .map_err(|e| TrieError::DB(e.to_string()))?;
-        Ok((pt, addr_list))
     }
 }
 
@@ -858,60 +808,6 @@ where
         match self.db.get(key).map_err(|e| TrieError::DB(e.to_string()))? {
             Some(value) => Ok(self.decode_node(&value)?),
             None => Ok(Node::Empty),
-        }
-    }
-
-    fn cache_node(&self, n: Node) -> TrieResult<Vec<u8>> {
-        match n {
-            Node::Empty => Ok(rlp::NULL_RLP.to_vec()),
-            Node::Leaf(leaf) => {
-                let borrow_leaf = leaf.borrow();
-
-                let mut stream = RlpStream::new_list(2);
-                stream.append(&borrow_leaf.key.encode_compact());
-                stream.append(&borrow_leaf.value);
-                Ok(stream.out().to_vec())
-            }
-            Node::Branch(branch) => {
-                let borrow_branch = branch.borrow();
-
-                let mut stream = RlpStream::new_list(17);
-                for i in 0..16 {
-                    let n = borrow_branch.children[i].clone();
-                    let data = self.cache_node(n)?;
-                    if data.len() == DIGEST_LEN {
-                        stream.append(&data);
-                    } else {
-                        stream.append_raw(&data, 1);
-                    }
-                }
-
-                match &borrow_branch.value {
-                    Some(v) => stream.append(v),
-                    None => stream.append_empty_data(),
-                };
-                Ok(stream.out().to_vec())
-            }
-            Node::Extension(ext) => {
-                let borrow_ext = ext.borrow();
-
-                let mut stream = RlpStream::new_list(2);
-                stream.append(&borrow_ext.prefix.encode_compact());
-                let data = self.cache_node(borrow_ext.node.clone())?;
-                if data.len() == DIGEST_LEN {
-                    stream.append(&data);
-                } else {
-                    stream.append_raw(&data, 1);
-                }
-                Ok(stream.out().to_vec())
-            }
-            Node::Hash(hash_node) => {
-                let hash = hash_node.borrow().hash.clone();
-                let next_node = self.recover_from_db(&hash)?;
-                let data = self.cache_node(next_node)?;
-                self.cache.borrow_mut().insert(hash.clone(), data);
-                Ok(hash)
-            }
         }
     }
 }

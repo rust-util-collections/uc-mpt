@@ -45,8 +45,7 @@ pub trait DB: Send + Sync {
         Ok(())
     }
 
-    /// If you have a cache,
-    /// flush data to the DB from the cache?
+    /// flush data to disk?
     fn flush(&self) -> Result<(), Self::Error> {
         Ok(())
     }
