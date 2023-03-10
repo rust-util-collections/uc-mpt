@@ -1,10 +1,8 @@
+use crate::errors::MemDBError;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-
-use parking_lot::RwLock;
-
-use crate::errors::MemDBError;
 
 /// "DB" defines the "trait" of trie and database interaction.
 /// You should first write the data to the cache and write the data
@@ -16,23 +14,25 @@ pub trait DB: Send + Sync {
 
     fn contains(&self, key: &[u8]) -> Result<bool, Self::Error>;
 
-    /// Insert data into the cache.
-    fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), Self::Error>;
+    fn insert(&self, key: &[u8], value: &[u8]) -> Result<(), Self::Error>;
 
-    /// Insert data into the cache.
     fn remove(&self, key: &[u8]) -> Result<(), Self::Error>;
 
-    /// Insert a batch of data into the cache.
-    fn insert_batch(&self, keys: Vec<Vec<u8>>, values: Vec<Vec<u8>>) -> Result<(), Self::Error> {
-        for i in 0..keys.len() {
-            let key = keys[i].clone();
-            let value = values[i].clone();
-            self.insert(key, value)?;
+    fn insert_batch(&self, kvs: &[(Vec<u8>, Vec<u8>)]) -> Result<(), Self::Error> {
+        for (k, v) in kvs.iter() {
+            self.insert(k, v)?;
         }
         Ok(())
     }
 
-    /// Remove a batch of data into the cache.
+    fn insert_batch_ref(&self, kvs: &[(&[u8], &[u8])]) -> Result<(), Self::Error> {
+        let kvs = kvs
+            .iter()
+            .map(|(k, v)| (k.to_vec(), v.to_vec()))
+            .collect::<Vec<_>>();
+        self.insert_batch(&kvs)
+    }
+
     fn remove_batch(&self, keys: &[Vec<u8>]) -> Result<(), Self::Error> {
         for key in keys {
             self.remove(key)?;
@@ -40,26 +40,34 @@ pub trait DB: Send + Sync {
         Ok(())
     }
 
-    /// Flush data to the DB from the cache.
-    fn flush(&self) -> Result<(), Self::Error>;
+    fn remove_batch_ref(&self, keys: &[&[u8]]) -> Result<(), Self::Error> {
+        for key in keys {
+            self.remove(key)?;
+        }
+        Ok(())
+    }
+
+    /// If you have a cache,
+    /// flush data to the DB from the cache?
+    fn flush(&self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     #[cfg(test)]
     fn len(&self) -> Result<usize, Self::Error>;
+
     #[cfg(test)]
     fn is_empty(&self) -> Result<bool, Self::Error>;
 }
 
 #[derive(Default, Debug)]
 pub struct MemoryDB {
-    // If "light" is true, the data is deleted from the database at the time of submission.
-    light: bool,
     storage: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>>,
 }
 
 impl MemoryDB {
-    pub fn new(light: bool) -> Self {
+    pub fn new() -> Self {
         MemoryDB {
-            light,
             storage: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -76,8 +84,8 @@ impl DB for MemoryDB {
         }
     }
 
-    fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), Self::Error> {
-        self.storage.write().insert(key, value);
+    fn insert(&self, key: &[u8], value: &[u8]) -> Result<(), Self::Error> {
+        self.storage.write().insert(key.to_vec(), value.to_vec());
         Ok(())
     }
 
@@ -86,9 +94,7 @@ impl DB for MemoryDB {
     }
 
     fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
-        if self.light {
-            self.storage.write().remove(key);
-        }
+        self.storage.write().remove(key);
         Ok(())
     }
 
@@ -112,10 +118,8 @@ mod tests {
 
     #[test]
     fn test_memdb_get() {
-        let memdb = MemoryDB::new(true);
-        memdb
-            .insert(b"test-key".to_vec(), b"test-value".to_vec())
-            .unwrap();
+        let memdb = MemoryDB::new();
+        memdb.insert(b"test-key", b"test-value").unwrap();
         let v = memdb.get(b"test-key").unwrap().unwrap();
 
         assert_eq!(v, b"test-value")
@@ -123,8 +127,8 @@ mod tests {
 
     #[test]
     fn test_memdb_contains() {
-        let memdb = MemoryDB::new(true);
-        memdb.insert(b"test".to_vec(), b"test".to_vec()).unwrap();
+        let memdb = MemoryDB::new();
+        memdb.insert(b"test", b"test").unwrap();
 
         let contains = memdb.contains(b"test").unwrap();
         assert!(contains)
@@ -132,8 +136,8 @@ mod tests {
 
     #[test]
     fn test_memdb_remove() {
-        let memdb = MemoryDB::new(true);
-        memdb.insert(b"test".to_vec(), b"test".to_vec()).unwrap();
+        let memdb = MemoryDB::new();
+        memdb.insert(b"test", b"test").unwrap();
 
         memdb.remove(b"test").unwrap();
         let contains = memdb.contains(b"test").unwrap();

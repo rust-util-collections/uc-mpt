@@ -1,7 +1,6 @@
+use rlp::DecoderError;
 use std::error::Error;
 use std::fmt;
-
-use rlp::DecoderError;
 
 #[derive(Debug)]
 pub enum TrieError {
